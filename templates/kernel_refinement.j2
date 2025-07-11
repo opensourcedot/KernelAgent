@@ -1,0 +1,47 @@
+{{ triton_guidelines }}
+
+TASK: Fix the following Triton kernel implementation based on the test results.
+
+TEST CODE:
+Analyze this test to understand what the kernel needs to implement:
+```python
+{{ test_code }}
+```
+
+CURRENT KERNEL IMPLEMENTATION:
+```python
+{{ kernel_code }}
+```
+
+TEST RESULTS:
+Error output: {{ error_info.stderr or 'None' }}
+Standard output: {{ error_info.stdout or 'None' }}
+
+{% if history_context -%}
+{{ history_context }}
+{%- endif %}
+
+CRITICAL REQUIREMENTS - NO CHEATING ALLOWED:
+1. Analyze the error message and fix the issue
+2. The implementation must be a complete, valid Python file
+3. The main function must be named 'kernel_function' that wraps the actual Triton kernel
+4. Follow all Triton programming guidelines
+5. Learn from previous attempts if any
+6. Focus on fixing the specific error while maintaining correctness
+
+**STRICTLY FORBIDDEN - DO NOT CHEAT:**
+- DO NOT call PyTorch functions (torch.add, torch.mul, torch.sum, etc.) inside the kernel computation
+- DO NOT use PyTorch operations to perform the actual computation and just return the result
+- DO NOT implement the logic using pure PyTorch and avoid writing Triton kernel code
+- The actual computation MUST be implemented using Triton operations (tl.load, tl.store, tl.sum, etc.)
+- The wrapper function can use PyTorch for tensor creation, memory allocation, and result formatting, but the core computation MUST happen in the Triton kernel
+
+**WHAT IS REQUIRED:**
+- Write actual Triton kernel code using triton.language operations
+- Use tl.load() and tl.store() for memory access
+- Use tl.sum(), tl.max(), tl.min() etc. for reductions  
+- Use proper Triton indexing with tl.program_id(), tl.arange(), etc.
+- Implement the algorithm step-by-step in Triton operations, not PyTorch shortcuts
+- The kernel should be decorated with @triton.jit, not the wrapper function
+
+Generate the complete fixed kernel implementation with actual Triton code: 

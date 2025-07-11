@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""
+End-to-end test for BF16 matmul kernel with Sigmoid activation fused.
+M = 1024, N = 2058, K = 4096
+"""
+
+import os
+import sys
+import torch
+import time
+from dotenv import load_dotenv
+from triton_kernel_agent import TritonKernelAgent
+
+
+def main():
+    """Generate and test a BF16 matmul kernel with fused sigmoid activation."""
+    # Load environment
+    load_dotenv()
+    
+    # Create agent
+    agent = TritonKernelAgent()
+    
+    print("=" * 80)
+    print("BF16 Matmul with Fused Sigmoid Activation")
+    print("Matrix dimensions: M=1024, N=2058, K=4096")
+    print("=" * 80)
+    
+    # Define the problem
+    problem_description = """
+Write a fused Triton kernel for the following problem:
+
+import torch
+import torch.nn as nn
+
+class Model(nn.Module):
+
+
+    def __init__(self, dim):
+
+        super(Model, self).__init__()
+        self.dim = dim
+
+    def forward(self, x):
+
+        return torch.cumsum(x, dim=self.dim)
+
+# Define input dimensions and parameters
+batch_size = 128
+input_shape = (4000,)  # Example shape (arbitrary)
+dim = 1
+
+def get_inputs():
+
+    return [torch.randn(batch_size, *input_shape)]
+
+def get_init_inputs():
+
+    return [dim]
+    """
+    
+    # Let the agent generate the test code
+    print("\nGenerating kernel...")
+    start_time = time.time()
+    
+    # Call agent to generate both test and kernel
+    result = agent.generate_kernel(problem_description, test_code=None)  # Let agent generate test
+    
+    generation_time = time.time() - start_time
+    print(f"\nGeneration completed in {generation_time:.2f} seconds")
+    
+    # Print results
+    if result["success"]:
+        print(f"\n✓ Successfully generated BF16 matmul + sigmoid kernel!")
+        print(f"  Worker {result['worker_id']} found solution in {result['rounds']} rounds")
+        print(f"  Session directory: {result['session_dir']}")
+        
+        print("\n" + "=" * 80)
+        print("Generated Kernel Code:")
+        print("=" * 80)
+        print(result["kernel_code"])
+        print("=" * 80)
+        
+        # Save the kernel to a file for future use
+        kernel_file = "bf16_matmul_sigmoid_kernel.py"
+        with open(kernel_file, "w") as f:
+            f.write(result["kernel_code"])
+        print(f"\n✓ Kernel saved to: {kernel_file}")
+        
+        # Run the generated test to show performance
+        print("\nRunning the generated test...")
+        
+        # Read the generated test code
+        import os
+        test_file = os.path.join(result['session_dir'], 'test.py')
+        with open(test_file, 'r') as f:
+            test_code = f.read()
+        
+        print("\nGenerated Test Code:")
+        print("=" * 80)
+        print(test_code)
+        print("=" * 80)
+        
+        # Create a test script that uses the generated kernel
+        # First, copy the kernel to kernel.py so the test can import it
+        with open("kernel.py", "w") as f:
+            f.write(result["kernel_code"])
+        
+        final_test_script = test_code
+        
+        with open("final_test.py", "w") as f:
+            f.write(final_test_script)
+        
+        os.system("python final_test.py")
+        
+        # Cleanup kernel.py
+        if os.path.exists("kernel.py"):
+            os.remove("kernel.py")
+        
+        # Cleanup temporary test file
+        os.remove("final_test.py")
+        
+    else:
+        print(f"\n✗ Failed to generate kernel")
+        print(f"  Message: {result['message']}")
+        print(f"  Session directory: {result['session_dir']}")
+        sys.exit(1)
+    
+    # Cleanup
+    agent.cleanup()
+    print("\n✓ E2E test completed successfully!")
+
+
+if __name__ == "__main__":
+    main()
