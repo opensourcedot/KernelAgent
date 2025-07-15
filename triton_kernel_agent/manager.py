@@ -2,13 +2,12 @@
 Worker Manager for parallel kernel verification and refinement.
 """
 
-import os
-import json
 import tempfile
 import shutil
 import multiprocessing as mp
+import queue
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
 from contextlib import contextmanager
@@ -153,7 +152,7 @@ class WorkerManager:
                         # Signal all workers to stop
                         self.success_event.set()
                         break
-                except:
+                except queue.Empty:
                     continue
                     
             # Wait for all workers to finish
@@ -169,7 +168,7 @@ class WorkerManager:
                     result = self.result_queue.get_nowait()
                     if result["success"] and successful_result is None:
                         successful_result = result
-                except:
+                except queue.Empty:
                     break
                     
             return successful_result

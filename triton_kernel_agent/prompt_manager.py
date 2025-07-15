@@ -5,9 +5,8 @@ This module provides centralized template loading and rendering functionality
 for all prompts used in the Triton kernel generation system.
 """
 
-import os
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
 try:
     from jinja2 import Environment, FileSystemLoader, Template
