@@ -8,12 +8,11 @@ import json
 import re
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 import logging
 import multiprocessing as mp
 from collections import deque
-import traceback
 
 try:
     from openai import OpenAI

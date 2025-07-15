@@ -4,9 +4,7 @@ End-to-end test for BF16 matmul kernel with Sigmoid activation fused.
 M = 1024, N = 2058, K = 4096
 """
 
-import os
 import sys
-import torch
 import time
 from dotenv import load_dotenv
 from triton_kernel_agent import TritonKernelAgent
@@ -70,7 +68,7 @@ def get_init_inputs():
     
     # Print results
     if result["success"]:
-        print(f"\n✓ Successfully generated BF16 matmul + sigmoid kernel!")
+        print("\n✓ Successfully generated BF16 matmul + sigmoid kernel!")
         print(f"  Worker {result['worker_id']} found solution in {result['rounds']} rounds")
         print(f"  Session directory: {result['session_dir']}")
         
@@ -120,7 +118,7 @@ def get_init_inputs():
         os.remove("final_test.py")
         
     else:
-        print(f"\n✗ Failed to generate kernel")
+        print("\n✗ Failed to generate kernel")
         print(f"  Message: {result['message']}")
         print(f"  Session directory: {result['session_dir']}")
         sys.exit(1)

@@ -105,7 +105,7 @@ class TritonKernelUI:
                 try:
                     with open(test_file_path, "r") as f:
                         generated_test = f.read()
-                except:
+                except (FileNotFoundError, IOError):
                     generated_test = "Test code not available"
 
                 logs = self._format_logs(result, generation_time)

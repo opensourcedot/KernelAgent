@@ -253,7 +253,7 @@ class TritonKernelAgent:
         
         # If provided test code exists, create a basic wrapper
         if provided_test_code:
-            test_code = f'''"""
+            test_code = '''"""
 Test for kernel implementation (adapted from provided test).
 """
 import torch
@@ -278,7 +278,7 @@ def test_kernel():
             print("Test failed: No result returned")
             return False
     except Exception as e:
-        print(f"Test failed: {{e}}")
+        print(f"Test failed: {e}")
         return False
 
 if __name__ == "__main__":
