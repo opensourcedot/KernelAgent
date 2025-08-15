@@ -26,6 +26,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+uv.lock
 
 # PyInstaller
 *.manifest
@@ -129,6 +130,7 @@ final_test.py
 *.swp
 *.swo
 *~
+CLAUDE.md
 
 # OS
 .DS_Store
