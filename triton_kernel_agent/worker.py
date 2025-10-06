@@ -1,20 +1,58 @@
-"""
-Verification Worker for testing and refining individual kernels.
-"""
+"""Verification Worker for testing and refining individual kernels."""
 
-import sys
 import json
-import re
-import subprocess
-from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
-from datetime import datetime
 import logging
 import multiprocessing as mp
+import re
+import subprocess
+import sys
 from collections import deque
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
 from .prompt_manager import PromptManager
 from .providers import get_model_provider
+
+
+DISALLOWED_TORCH_PATTERNS = [
+    (
+        re.compile(r"\bimport\s+torch\.nn(\b|\s+as\b)"),
+        "importing torch.nn modules is not allowed",
+    ),
+    (
+        re.compile(r"\bfrom\s+torch\s+import\s+nn\b"),
+        "importing torch.nn modules is not allowed",
+    ),
+    (
+        re.compile(r"\bimport\s+torch\.nn\.functional\s+as\s+F\b"),
+        "aliasing torch.nn.functional as F is not allowed",
+    ),
+    (re.compile(r"\btorch\.nn\."), "torch.nn module usage is not allowed"),
+    (
+        re.compile(r"\btorch\.nn\.functional\b"),
+        "torch.nn.functional usage is not allowed",
+    ),
+    (
+        re.compile(r"\bF\.[A-Za-z_]+\("),
+        "torch.nn.functional alias calls (F.*) are not allowed",
+    ),
+    (re.compile(r"\btorch\.conv"), "torch convolution helpers are not allowed"),
+    (
+        re.compile(
+            r"\btorch\.(relu|sigmoid|tanh|softmax|gelu|mish|hardtanh|max_pool|avg_pool)[A-Za-z0-9_]*\("
+        ),
+        "PyTorch activation/pooling helpers are not allowed",
+    ),
+    (
+        re.compile(r"\bclass\s+\w+\s*\(\s*nn\.Module"),
+        "Subclassing torch.nn.Module is not allowed",
+    ),
+    (
+        re.compile(r"\.forward\("),
+        "Calling .forward() indicates torch.nn module usage and is not allowed",
+    ),
+]
 
 
 class VerificationWorker:
@@ -28,7 +66,7 @@ class VerificationWorker:
         max_rounds: int = 10,
         history_size: int = 8,
         openai_api_key: Optional[str] = None,
-        openai_model: str = "o3-2025-04-16",
+        openai_model: str = "gpt-5",
         high_reasoning_effort: bool = True,
     ):
         """
@@ -59,7 +97,10 @@ class VerificationWorker:
         # History for LLM context
         self.history = deque(maxlen=history_size)
 
-        # Initialize provider
+        # Setup logging early so it is available for any error paths
+        self._setup_logging()
+
+        # Initialize provider (may be unavailable in offline/test environments)
         self.provider = None
         try:
             self.provider = get_model_provider(self.openai_model)
@@ -69,9 +110,6 @@ class VerificationWorker:
 
         # Initialize prompt manager
         self.prompt_manager = PromptManager()
-
-        # Setup logging
-        self._setup_logging()
 
     def _setup_logging(self):
         """Setup worker-specific logging."""
@@ -152,6 +190,19 @@ class VerificationWorker:
         self.kernel_file.write_text(kernel_code)
         self.test_file.write_text(test_code)
         self.logger.info("Wrote kernel and test files")
+
+    def _strip_comments_and_strings(self, code: str) -> str:
+        """Remove comments and docstrings to avoid false positives when scanning code."""
+        pattern = re.compile(r'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|#.*)')
+        return re.sub(pattern, "", code)
+
+    def _detect_pytorch_compute(self, kernel_code: str) -> Optional[str]:
+        """Detect disallowed PyTorch usage inside the kernel wrapper."""
+        sanitized = self._strip_comments_and_strings(kernel_code)
+        for pattern, message in DISALLOWED_TORCH_PATTERNS:
+            if pattern.search(sanitized):
+                return message
+        return None
 
     def _run_test(self) -> Tuple[bool, str, str]:
         """
@@ -245,7 +296,7 @@ class VerificationWorker:
 
                 # Call LLM API
                 messages = [{"role": "user", "content": prompt}]
-                response_text = self._call_llm(messages, max_tokens=8192)
+                response_text = self._call_llm(messages, max_tokens=20000)
 
                 # Extract refined kernel from response
                 refined_kernel = self._extract_code_from_response(response_text)
@@ -338,6 +389,21 @@ class VerificationWorker:
             else:
                 # Subsequent rounds: only update kernel, test remains unchanged
                 self._write_kernel(current_kernel)
+
+            violation = self._detect_pytorch_compute(current_kernel)
+            if violation:
+                message = f"Disallowed PyTorch usage detected: {violation}"
+                self.logger.error(message)
+                self._log_round(round_num + 1, False, current_kernel, "", message)
+                error_info = {
+                    "stdout": "",
+                    "stderr": message,
+                    "history": list(self.history),
+                }
+                current_kernel = self._refine_kernel(
+                    current_kernel, error_info, problem_description, test_code
+                )
+                continue
 
             # Run test
             success, stdout, stderr = self._run_test()
