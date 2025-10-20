@@ -19,6 +19,7 @@ import argparse
 import os
 import time
 import traceback
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import gradio as gr
@@ -27,6 +28,35 @@ from dotenv import load_dotenv
 
 from triton_kernel_agent import TritonKernelAgent
 from triton_kernel_agent.providers.models import AVAILABLE_MODELS
+
+
+KERNELBENCH_BASE_PATH = (
+    Path(__file__).resolve().parent / "external" / "KernelBench" / "KernelBench"
+)
+KERNELBENCH_LEVEL_LABELS = {
+    "level1": "Level 1",
+    "level2": "Level 2",
+}
+
+
+def load_kernelbench_problem_map(
+    levels: Tuple[str, ...] = ("level1", "level2"),
+) -> Dict[str, Path]:
+    problem_map: Dict[str, Path] = {}
+    for level in levels:
+        level_dir = KERNELBENCH_BASE_PATH / level
+        if not level_dir.is_dir():
+            continue
+
+        level_label = KERNELBENCH_LEVEL_LABELS.get(level, level.title())
+        for path in sorted(level_dir.glob("*.py")):
+            problem_name = path.stem
+            label = f"{level_label} · {problem_name}"
+            if label in problem_map:
+                label = f"{label} ({path.name})"
+            problem_map[label] = path
+
+    return problem_map
 
 
 class TritonKernelUI:
@@ -269,6 +299,20 @@ def main():
 
     # Create UI instance
     ui = TritonKernelUI()
+    kernelbench_problem_map = load_kernelbench_problem_map()
+    kernelbench_problem_choices = list(kernelbench_problem_map.keys())
+    default_problem_choice = (
+        kernelbench_problem_choices[0] if kernelbench_problem_choices else None
+    )
+    kernelbench_problem_cache: Dict[str, str] = {}
+
+    if default_problem_choice:
+        try:
+            kernelbench_problem_cache[default_problem_choice] = kernelbench_problem_map[
+                default_problem_choice
+            ].read_text(encoding="utf-8")
+        except OSError:
+            kernelbench_problem_cache[default_problem_choice] = ""
 
     # Create Gradio interface
     with gr.Blocks(
@@ -304,9 +348,14 @@ def main():
                     info="⚠️ Not saved - only used for this session",
                 )
 
-                choices = [
-                    (config.description, config.name) for config in AVAILABLE_MODELS
-                ]
+                CLAUDE_SONNET_4_5_MODEL_NAME = "claude-sonnet-4-5-20250929"
+                CLAUDE_SONNET_4_5_LABEL = "Claude Sonnet 4.5"
+                choices = []
+                for config in AVAILABLE_MODELS:
+                    label = config.description
+                    if config.name == CLAUDE_SONNET_4_5_MODEL_NAME:
+                        label = CLAUDE_SONNET_4_5_LABEL  # Shorten the Anthropic label for clarity
+                    choices.append((label, config.name))
                 # Model selection
                 model_dropdown = gr.Dropdown(
                     choices=choices,
@@ -323,14 +372,29 @@ def main():
                     interactive=True,
                 )
 
-                gr.Markdown("## 📝 Problem Description")
+                gr.Markdown("## 🧩 KernelBench Problem")
+
+                problem_dropdown = gr.Dropdown(
+                    choices=kernelbench_problem_choices,
+                    label="KernelBench problem selection",
+                    value=default_problem_choice,
+                    interactive=bool(kernelbench_problem_choices),
+                    info=(
+                        "Select a KernelBench Level 1 or Level 2 problem to auto-fill the descriptor below."
+                        if kernelbench_problem_choices
+                        else f"No KernelBench problems found at {KERNELBENCH_BASE_PATH}"
+                    ),
+                    allow_custom_value=False,
+                )
 
                 # Problem description input
                 problem_input = gr.Textbox(
-                    label="Describe your kernel problem",
-                    placeholder="Enter a clear description of the kernel you want to generate...",
+                    label="Override problem descriptor (optional)",
+                    placeholder="Select a KernelBench problem above or paste your own problem descriptor...",
                     lines=10,
                     max_lines=20,
+                    value=kernelbench_problem_cache.get(default_problem_choice, ""),
+                    info="Editing this field overrides the selected KernelBench descriptor.",
                 )
 
                 # Optional test code
@@ -394,6 +458,27 @@ def main():
                     )
 
         # Event handlers
+
+        def update_problem_descriptor(selection: Optional[str]):
+            if not selection:
+                return gr.update()
+
+            path = kernelbench_problem_map.get(selection)
+            if not path or not path.exists():
+                return gr.update(
+                    value=f"# Unable to load descriptor for {selection}\n\nMissing file: {path}"
+                )
+
+            if selection not in kernelbench_problem_cache:
+                try:
+                    kernelbench_problem_cache[selection] = path.read_text(
+                        encoding="utf-8"
+                    )
+                except OSError as exc:
+                    return gr.update(value=f"# Error loading {selection}\n\n{exc}")
+
+            return gr.update(value=kernelbench_problem_cache[selection])
+
         def generate_with_status(
             problem_desc, test_code, model_name, high_reasoning_effort, user_api_key
         ):
@@ -411,6 +496,22 @@ def main():
                 return error_msg, "", "", "", "", ""
 
         # Wire up events
+        if kernelbench_problem_choices:
+            problem_dropdown.change(
+                fn=update_problem_descriptor,
+                inputs=problem_dropdown,
+                outputs=problem_input,
+            )
+
+            def handle_problem_select(evt: gr.SelectData):
+                return update_problem_descriptor(evt.value)
+
+            problem_dropdown.select(
+                fn=handle_problem_select,
+                inputs=None,
+                outputs=problem_input,
+            )
+
         generate_btn.click(
             fn=generate_with_status,
             inputs=[
