@@ -29,13 +29,10 @@ from typing import List, Optional, Tuple
 import gradio as gr
 from dotenv import load_dotenv
 
-from Fuser.pipeline import run_pipeline
-from Fuser.auto_agent import AutoKernelRouter
-from Fuser.code_extractor import extract_single_python_file
-from triton_kernel_agent.providers.models import (
-    get_model_provider,
-    MODEL_NAME_TO_CONFIG,
-)
+# Ensure project root is importable when run as a script.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 
 def _list_kernelbench_problems(base: Path) -> List[Tuple[str, str]]:
@@ -103,6 +100,9 @@ def _maybe_synthesize_problem(desc: str, model_name: str) -> Path:
     - If desc looks like Python (contains 'class Model' or 'def get_inputs'), use it as-is.
     - Else, call LLM to synthesize a KernelBench-compatible problem file.
     """
+    from Fuser.code_extractor import extract_single_python_file
+    from triton_kernel_agent.providers.models import get_model_provider
+
     txt = desc.strip()
     if not txt:
         raise ValueError("Empty problem description")
@@ -158,6 +158,9 @@ def run_pipeline_ui(
     router_high_reasoning: bool = True,
     user_api_key: Optional[str] = None,
 ) -> PipelineArtifacts:
+    from Fuser.auto_agent import AutoKernelRouter
+    from Fuser.pipeline import run_pipeline
+
     if not problem_path:
         # If no path given, try description
         if not problem_description.strip():
@@ -479,6 +482,8 @@ class PipelineUI:
 
 
 def build_interface() -> gr.Blocks:
+    from triton_kernel_agent.providers.models import MODEL_NAME_TO_CONFIG
+
     ui = PipelineUI()
     default_problem = ui.problem_choices[0][0] if ui.problem_choices else ""
     default_problem_path = ui.problem_choices[0][1] if ui.problem_choices else ""
